@@ -1,0 +1,42 @@
+{
+  "name": "sa_discord_bot",
+  "version": "1.0.0",
+  "description": "Super annotate magic bot",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsup src/index.ts --minify",
+    "deploy": "tsx src/deploy-commands.ts",
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/aserec/SA_discord_bot.git"
+  },
+  "author": "SuperAnnotate",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/aserec/SA_discord_bot/issues"
+  },
+  "homepage": "https://github.com/aserec/SA_discord_bot#readme",
+  "dependencies": {
+    "@discord-player/extractor": "^4.4.5",
+    "@discordjs/rest": "^2.2.0",
+    "@discordjs/voice": "^0.16.1",
+    "@langchain/community": "^0.0.27",
+    "@langchain/openai": "^0.0.14",
+    "axios": "^1.6.2",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "langchain": "^0.0.196",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.20.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.6.0",
+    "typescript": "^5.3.2"
+  }
+}
