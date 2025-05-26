@@ -6,8 +6,17 @@ import {
   ComponentType,
 } from "discord.js";
 import { mockDb } from "../utils/mockDb";
+import { updateQueueMessage } from "../utils/updateQueueMessage";
 
-// Mock function to get user's projects from tags
+interface Request {
+  project: string;
+  technologies: string[];
+  username: string;
+  status: string;
+  timestamp: Date;
+}
+
+// Get user's projects from roles
 const getUserProjects = (userTags: string[]): string[] => {
   // This is a mock implementation. In reality, you would parse the user's roles/tags
   // to determine which projects they are part of
@@ -16,7 +25,7 @@ const getUserProjects = (userTags: string[]): string[] => {
   );
 };
 
-// Mock function to get user's approved technologies from tags
+// Get user's approved technologies from roles
 const getUserTechnologies = (userTags: string[]): string[] => {
   // This is a mock implementation. In reality, you would parse the user's roles/tags
   // to determine which technologies they are approved for
@@ -39,157 +48,229 @@ const saveRequest = async (request: any): Promise<boolean> => {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("request-items")
-    .setDescription("Request items for a project"),
+    .setDescription("Request items for a project")
+    .addStringOption((option) =>
+      option
+        .setName("config")
+        .setDescription(
+          "Configuration option (e.g., 'repeat' to use last selections)"
+        )
+        .setRequired(false)
+    ),
 
   async execute(interaction: CommandInteraction) {
     await interaction.deferReply({ ephemeral: true });
 
     try {
-      // Get user's roles/tags
-      const member = interaction.guild?.members.cache.get(interaction.user.id);
-      const userTags = member?.roles.cache.map((role) => role.name) || [];
-
-      // Get user's projects and technologies
-      const userProjects = getUserProjects(userTags);
-      const userTechnologies = getUserTechnologies(userTags);
-
-      if (userProjects.length === 0) {
-        return interaction.editReply("You are not part of any projects.");
-      }
-
-      if (userTechnologies.length === 0) {
-        return interaction.editReply(
-          "You don't have any approved technologies."
-        );
-      }
-
-      // Create project selection menu
-      const projectSelect = new StringSelectMenuBuilder()
-        .setCustomId("project-select")
-        .setPlaceholder("Select a project")
-        .addOptions(
-          userProjects.map((project) => ({
-            label: project,
-            value: project,
-          }))
-        );
-
-      const projectRow =
-        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-          projectSelect
-        );
-
-      // Send project selection menu
-      const projectResponse = await interaction.editReply({
-        content: "Please select a project:",
-        components: [projectRow],
-      });
-
-      // Wait for project selection
-      const projectCollector = projectResponse.createMessageComponentCollector({
-        componentType: ComponentType.StringSelect,
-        time: 60000,
-      });
-
+      const configOption = interaction.options.get("config");
+      const repeat = configOption?.value === "repeat";
       let selectedProject: string | null = null;
-
-      projectCollector.on("collect", async (i) => {
-        if (i.user.id !== interaction.user.id) return;
-        selectedProject = i.values[0];
-        await i.deferUpdate();
-        projectCollector.stop(); // Stop the collector after receiving the selection
-      });
-
-      // Wait for project selection
-      await new Promise((resolve) => {
-        projectCollector.on("end", resolve);
-      });
-
-      if (!selectedProject) {
-        return interaction.editReply("No project selected. Request cancelled.");
-      }
-
-      // Create technology selection menu
-      const techSelect = new StringSelectMenuBuilder()
-        .setCustomId("tech-select")
-        .setPlaceholder("Select technologies")
-        .setMinValues(1)
-        .setMaxValues(userTechnologies.length)
-        .addOptions(
-          userTechnologies.map((tech) => ({
-            label: tech,
-            value: tech,
-          }))
-        );
-
-      const techRow =
-        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-          techSelect
-        );
-
-      // Send technology selection menu
-      const techResponse = await interaction.editReply({
-        content: "Please select technologies:",
-        components: [techRow],
-      });
-
-      // Wait for technology selection
-      const techCollector = techResponse.createMessageComponentCollector({
-        componentType: ComponentType.StringSelect,
-        time: 60000,
-      });
-
       let selectedTechnologies: string[] = [];
 
-      techCollector.on("collect", async (i) => {
-        if (i.user.id !== interaction.user.id) return;
-        selectedTechnologies = i.values;
-        await i.deferUpdate();
-        techCollector.stop(); // Stop the collector after receiving the selection
-      });
+      // If repeat is true, try to get the last selections
+      if (repeat) {
+        const lastSelections = await mockDb
+          .collection("lastSelections")
+          .findOne({
+            command: "request-items",
+          });
+        if (lastSelections) {
+          selectedProject = lastSelections.project;
+          selectedTechnologies = lastSelections.technologies;
+        }
+      }
 
-      // Wait for technology selection
-      await new Promise((resolve) => {
-        techCollector.on("end", resolve);
-      });
+      // If not repeating or no last selections found, show the selection menus
+      if (!selectedProject || selectedTechnologies.length === 0) {
+        // Get user's roles/tags
+        const member = interaction.guild?.members.cache.get(
+          interaction.user.id
+        );
+        const userTags = member?.roles.cache.map((role) => role.name) || [];
 
-      if (selectedTechnologies.length === 0) {
-        return interaction.editReply(
-          "No technologies selected. Request cancelled."
+        // Get user's projects and technologies
+        const userProjects = getUserProjects(userTags);
+        const userTechnologies = getUserTechnologies(userTags);
+
+        if (userProjects.length === 0) {
+          return interaction.editReply("You are not part of any projects.");
+        }
+
+        if (userTechnologies.length === 0) {
+          return interaction.editReply(
+            "You don't have any approved technologies."
+          );
+        }
+
+        // Create project selection menu
+        const projectSelect = new StringSelectMenuBuilder()
+          .setCustomId("project-select")
+          .setPlaceholder("Select a project")
+          .addOptions(
+            userProjects.map((project) => ({
+              label: project,
+              value: project,
+            }))
+          );
+
+        // Create technology selection menu (multiselect)
+        const techSelect = new StringSelectMenuBuilder()
+          .setCustomId("tech-select")
+          .setPlaceholder("Select technologies")
+          .setMinValues(1)
+          .setMaxValues(userTechnologies.length)
+          .addOptions(
+            userTechnologies.map((tech) => ({
+              label: tech,
+              value: tech,
+            }))
+          );
+
+        const projectRow =
+          new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+            projectSelect
+          );
+        const techRow =
+          new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+            techSelect
+          );
+
+        // Send both selection menus
+        const response = await interaction.editReply({
+          content: "Please select a project and technologies:",
+          components: [projectRow, techRow],
+        });
+
+        // Create collectors for both dropdowns
+        const collector = response.createMessageComponentCollector({
+          componentType: ComponentType.StringSelect,
+          time: 60000,
+        });
+
+        collector.on("collect", async (i) => {
+          if (i.user.id !== interaction.user.id) return;
+
+          if (i.customId === "project-select") {
+            selectedProject = i.values[0];
+          } else if (i.customId === "tech-select") {
+            selectedTechnologies = i.values;
+          }
+
+          await i.deferUpdate();
+
+          // If both selections are made, stop the collector
+          if (selectedProject && selectedTechnologies.length > 0) {
+            collector.stop();
+          }
+        });
+
+        // Wait for both selections
+        await new Promise((resolve) => {
+          collector.on("end", resolve);
+        });
+
+        if (!selectedProject || selectedTechnologies.length === 0) {
+          return interaction.editReply({
+            content: "Selection cancelled or timed out.",
+            components: [],
+          });
+        }
+
+        // Save the selections for future use
+        await mockDb.collection("lastSelections").updateOne(
+          { command: "request-items" },
+          {
+            $set: {
+              project: selectedProject,
+              technologies: selectedTechnologies,
+            },
+          }
         );
       }
 
-      // Create request object
-      const request = {
-        userId: interaction.user.id,
-        username: interaction.user.tag,
+      // Check for existing requests for this project and user
+      const existingRequest = await mockDb.collection("requests").findOne({
         project: selectedProject,
+        username: interaction.user.tag,
+      });
+
+      if (existingRequest) {
+        // Find which technologies are new and which already exist
+        const existingTechs = existingRequest.technologies;
+        const newTechs = selectedTechnologies.filter(
+          (tech) => !existingTechs.includes(tech)
+        );
+        const duplicateTechs = selectedTechnologies.filter((tech) =>
+          existingTechs.includes(tech)
+        );
+
+        if (newTechs.length > 0) {
+          // Update existing request with new technologies
+          await mockDb.collection("requests").updateOne(
+            {
+              project: selectedProject,
+              username: interaction.user.tag,
+            },
+            {
+              $set: {
+                technologies: [...existingTechs, ...newTechs],
+              },
+            }
+          );
+
+          // Update the queue message
+          await updateQueueMessage();
+
+          // Construct response message
+          let responseMessage = "Request updated:\n";
+          if (duplicateTechs.length > 0) {
+            responseMessage += `- Already requested: ${duplicateTechs.join(
+              ", "
+            )}\n`;
+          }
+          responseMessage += `- New technologies added: ${newTechs.join(", ")}`;
+
+          return interaction.editReply({
+            content: responseMessage,
+            components: [],
+          });
+        } else {
+          return interaction.editReply({
+            content: `You already have a request for ${selectedProject} with all selected technologies: ${duplicateTechs.join(
+              ", "
+            )}`,
+            components: [],
+          });
+        }
+      }
+
+      // Create new request if no existing request found
+      const request: Request = {
+        project: selectedProject!,
         technologies: selectedTechnologies,
+        username: interaction.user.tag,
+        status: "Pending",
         timestamp: new Date(),
-        status: "pending",
       };
 
-      // Save request
-      const saved = await saveRequest(request);
+      // Save to mock database
+      await mockDb.collection("requests").insertOne(request);
 
-      if (saved) {
-        return interaction.editReply({
-          content: `Request submitted successfully!\nProject: ${selectedProject}\nTechnologies: ${selectedTechnologies.join(
-            ", "
-          )}`,
-          components: [],
-        });
-      } else {
-        return interaction.editReply({
-          content: "Failed to submit request. Please try again later.",
-          components: [],
-        });
-      }
+      // Update the queue message
+      await updateQueueMessage();
+
+      // Send confirmation
+      await interaction.editReply({
+        content: `Request submitted successfully!\nProject: ${
+          request.project
+        }\nTechnologies: ${request.technologies.join(", ")}`,
+        components: [],
+      });
     } catch (error) {
       console.error("Error in request-items command:", error);
       return interaction.editReply({
         content:
-          "There was an error processing your request. Please try again later.",
+          "There was an error submitting your request. Please try again later.",
         components: [],
       });
     }

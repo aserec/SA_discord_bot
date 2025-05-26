@@ -64,30 +64,37 @@ for (const file of eventFiles) {
 }
 
 // Handle interaction creation
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
-
-  if (!command) {
-    console.error(`No command matching ${interaction.commandName} was found.`);
-    return;
-  }
+  if (!command) return;
 
   try {
     await command.execute(interaction);
   } catch (error) {
-    console.error(error);
+    console.error(`Error executing ${interaction.commandName}:`, error);
+
+    // Check if the interaction is still valid
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({
-        content: "There was an error while executing this command!",
-        ephemeral: true,
-      });
+      try {
+        await interaction.editReply({
+          content: "There was an error while executing this command!",
+          components: [],
+        });
+      } catch (e) {
+        console.error("Error editing reply:", e);
+      }
     } else {
-      await interaction.reply({
-        content: "There was an error while executing this command!",
-        ephemeral: true,
-      });
+      try {
+        await interaction.reply({
+          content: "There was an error while executing this command!",
+          ephemeral: true,
+          components: [],
+        });
+      } catch (e) {
+        console.error("Error sending reply:", e);
+      }
     }
   }
 });
