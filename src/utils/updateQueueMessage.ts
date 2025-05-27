@@ -1,4 +1,4 @@
-import { WebhookClient, EmbedBuilder } from "discord.js";
+import { WebhookClient } from "discord.js";
 import { mockDb } from "./mockDb";
 
 interface Request {
@@ -20,45 +20,58 @@ const formatTimestamp = (date: Date): string => {
   });
 };
 
-// Create the queue message embed
-const createQueueEmbed = (requests: Request[]): EmbedBuilder => {
-  const embed = new EmbedBuilder()
-    .setColor("#0099ff")
-    .setTitle("Requests Queue")
-    .setDescription(`Total Requests: ${requests.length}`)
-    .setTimestamp();
+// Create the queue message content
+export const createQueueMessage = (requests: Request[]): string => {
+  let content = "**Requests Queue**\n";
+  content += `Total Requests: ${requests.length}\n\n`;
 
-  // Group requests by status
-  const groupedRequests = requests.reduce((acc, request) => {
-    if (!acc[request.status]) {
-      acc[request.status] = [];
+  // First group by project
+  const projects = requests.reduce((acc, request) => {
+    if (!acc[request.project]) {
+      acc[request.project] = [];
     }
-    acc[request.status].push(request);
+    acc[request.project].push(request);
     return acc;
   }, {} as Record<string, Request[]>);
 
-  // Add fields for each status
-  Object.entries(groupedRequests).forEach(([status, statusRequests]) => {
-    const value = statusRequests
-      .map(
-        (req) =>
-          `• ${req.username.split("#")[0]} - ${
-            req.project
-          } (${req.technologies.join(", ")}) - ${formatTimestamp(
-            req.timestamp
-          )}\n  [Message User](https://discord.com/users/${
-            req.username.split("#")[0]
-          })`
-      )
-      .join("\n");
+  // For each project, group by status and add content
+  Object.entries(projects).forEach(([project, projectRequests], index) => {
+    // Add project title
+    content += `**📋 ${project}**\n`;
+    content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
-    embed.addFields({
-      name: `${status} (${statusRequests.length})`,
-      value: value || "No requests",
+    // Group requests by status within the project
+    const statusGroups = projectRequests.reduce((acc, request) => {
+      if (!acc[request.status]) {
+        acc[request.status] = [];
+      }
+      acc[request.status].push(request);
+      return acc;
+    }, {} as Record<string, Request[]>);
+
+    // Add content for each status in the project
+    Object.entries(statusGroups).forEach(([status, statusRequests]) => {
+      content += `**${status}** (${statusRequests.length})\n`;
+
+      const value = statusRequests
+        .map(
+          (req) =>
+            `• ${req.username.split("#")[0]} - ${req.technologies.join(
+              ", "
+            )} - ${formatTimestamp(req.timestamp)}`
+        )
+        .join("\n");
+
+      content += value + "\n\n";
     });
+
+    // Add a divider after each project except the last one
+    if (index < Object.keys(projects).length - 1) {
+      content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    }
   });
 
-  return embed;
+  return content;
 };
 
 export const updateQueueMessage = async () => {
@@ -82,16 +95,25 @@ export const updateQueueMessage = async () => {
     // Get current requests
     const requests = await mockDb.collection("requests").find();
 
-    // Create and send the updated embed
-    const embed = createQueueEmbed(requests);
+    // Apply project filter if it exists
+    const filteredRequests = monitor.projectFilter
+      ? requests.filter((req) =>
+          req.project
+            .toLowerCase()
+            .includes(monitor.projectFilter.toLowerCase())
+        )
+      : requests;
+
+    // Create and send the updated message
+    const content = createQueueMessage(filteredRequests);
 
     try {
-      await webhook.editMessage(monitor.messageId, { embeds: [embed] });
+      await webhook.editMessage(monitor.messageId, { content });
     } catch (error) {
       console.error("Error updating webhook message:", error);
       // If the message edit fails, try to send a new message
       try {
-        const newMessage = await webhook.send({ embeds: [embed] });
+        const newMessage = await webhook.send({ content });
         // Update the stored message ID
         await mockDb
           .collection("queueMonitor")

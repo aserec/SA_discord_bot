@@ -3,10 +3,10 @@ import {
   CommandInteraction,
   TextChannel,
   WebhookClient,
-  EmbedBuilder,
   PermissionsBitField,
 } from "discord.js";
 import { mockDb } from "../utils/mockDb";
+import { createQueueMessage } from "../utils/updateQueueMessage";
 
 interface Request {
   project: string;
@@ -16,106 +16,123 @@ interface Request {
   timestamp: Date;
 }
 
-// Format timestamp to a more readable format
-const formatTimestamp = (date: Date): string => {
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-};
-
-// Create the queue message embed
-const createQueueEmbed = (requests: Request[]): EmbedBuilder => {
-  const embed = new EmbedBuilder()
-    .setColor("#0099ff")
-    .setTitle("Requests Queue")
-    .setDescription(`Total Requests: ${requests.length}`)
-    .setTimestamp();
-
-  // Group requests by status
-  const groupedRequests = requests.reduce((acc, request) => {
-    if (!acc[request.status]) {
-      acc[request.status] = [];
-    }
-    acc[request.status].push(request);
-    return acc;
-  }, {} as Record<string, Request[]>);
-
-  // Add fields for each status
-  Object.entries(groupedRequests).forEach(([status, statusRequests]) => {
-    const value = statusRequests
-      .map(
-        (req) =>
-          `• ${req.username.split("#")[0]} - ${
-            req.project
-          } (${req.technologies.join(", ")}) - ${formatTimestamp(
-            req.timestamp
-          )}\n  [Message User](https://discord.com/users/${
-            req.username.split("#")[0]
-          })`
-      )
-      .join("\n");
-
-    embed.addFields({
-      name: `${status} (${statusRequests.length})`,
-      value: value || "No requests",
-    });
-  });
-
-  return embed;
-};
-
-// Example data for initial setup
+// Example requests for testing
 const exampleRequests: Request[] = [
+  // Project-A requests
   {
     project: "Project-A",
     technologies: ["Python", "JavaScript"],
-    username: "JohnDoe#1234",
+    username: "alex.dev#1234",
     status: "Pending",
-    timestamp: new Date("2024-01-15T14:30:00"),
-  },
-  {
-    project: "Project-B",
-    technologies: ["Node.js", "Python"],
-    username: "BobJohnson#5678",
-    status: "Pending",
-    timestamp: new Date("2024-01-15T12:00:00"),
-  },
-  {
-    project: "Project-B",
-    technologies: ["TypeScript"],
-    username: "CharlieWilson#9012",
-    status: "Pending",
-    timestamp: new Date("2024-01-15T06:00:00"),
+    timestamp: new Date(),
   },
   {
     project: "Project-A",
     technologies: ["TypeScript", "React"],
-    username: "JaneSmith#3456",
+    username: "sarah.coder#5678",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-A",
+    technologies: ["Node.js", "MongoDB"],
+    username: "mike.tech#9012",
     status: "Approved",
-    timestamp: new Date("2024-01-14T14:30:00"),
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-A",
+    technologies: ["Docker", "Kubernetes"],
+    username: "lisa.devops#3456",
+    status: "Rejected",
+    timestamp: new Date(),
+  },
+
+  // Project-B requests
+  {
+    project: "Project-B",
+    technologies: ["Java", "Spring Boot"],
+    username: "john.backend#7890",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-B",
+    technologies: ["Angular", "TypeScript"],
+    username: "emma.frontend#2345",
+    status: "Approved",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-B",
+    technologies: ["PostgreSQL", "Redis"],
+    username: "david.dba#6789",
+    status: "Rejected",
+    timestamp: new Date(),
+  },
+
+  // Project-C requests
+  {
+    project: "Project-C",
+    technologies: ["React Native", "Firebase"],
+    username: "anna.mobile#0123",
+    status: "Pending",
+    timestamp: new Date(),
   },
   {
     project: "Project-C",
-    technologies: ["JavaScript", "React", "Node.js"],
-    username: "AliceBrown#7890",
+    technologies: ["AWS", "Lambda"],
+    username: "tom.cloud#4567",
+    status: "Approved",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-C",
+    technologies: ["GraphQL", "Apollo"],
+    username: "rachel.api#8901",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+
+  // Project-D requests
+  {
+    project: "Project-D",
+    technologies: ["Vue.js", "Vuetify"],
+    username: "peter.ui#2345",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-D",
+    technologies: ["Go", "gRPC"],
+    username: "sophie.backend#6789",
+    status: "Approved",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-D",
+    technologies: ["Elasticsearch", "Kibana"],
+    username: "chris.search#0123",
     status: "Rejected",
-    timestamp: new Date("2024-01-13T14:30:00"),
+    timestamp: new Date(),
   },
 ];
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("setup-queue-monitor")
-    .setDescription("Set up a channel to monitor the requests queue")
+    .setDescription("Set up the requests queue monitor in a channel")
     .addChannelOption((option) =>
       option
         .setName("channel")
-        .setDescription("The channel to monitor the queue in")
+        .setDescription("The channel to set up the queue monitor in")
         .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("project-filter")
+        .setDescription("Optional: Filter requests by project name (contains)")
+        .setRequired(false)
     ),
 
   async execute(interaction: CommandInteraction) {
@@ -161,7 +178,13 @@ module.exports = {
         );
       }
 
-      // Create a webhook for the channel
+      // Get all webhooks in the channel
+      const webhooks = await channel.fetchWebhooks();
+
+      // Delete all existing webhooks in the channel
+      await Promise.all(webhooks.map((webhook) => webhook.delete()));
+
+      // Create a new webhook
       const webhook = await channel.createWebhook({
         name: "Queue Monitor",
         avatar: interaction.client.user?.displayAvatarURL(),
@@ -178,9 +201,19 @@ module.exports = {
       // Get current requests
       const requests = await mockDb.collection("requests").find();
 
-      // Create and send the initial embed
-      const embed = createQueueEmbed(requests);
-      const message = await webhook.send({ embeds: [embed] });
+      // Apply project filter if specified
+      const projectFilter = interaction.options.get("project-filter")?.value as
+        | string
+        | undefined;
+      const filteredRequests = projectFilter
+        ? requests.filter((req) =>
+            req.project.toLowerCase().includes(projectFilter.toLowerCase())
+          )
+        : requests;
+
+      // Create and send the initial message
+      const content = createQueueMessage(filteredRequests);
+      const message = await webhook.send({ content });
 
       // Store the webhook and message IDs in the database
       await mockDb.collection("queueMonitor").updateOne(
@@ -191,6 +224,7 @@ module.exports = {
             webhookToken: webhook.token,
             messageId: message.id,
             channelId: channel.id,
+            projectFilter: projectFilter || null,
           },
         },
         { upsert: true }

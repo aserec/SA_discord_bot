@@ -4,6 +4,8 @@ import {
   StringSelectMenuBuilder,
   ActionRowBuilder,
   ComponentType,
+  ButtonBuilder,
+  ButtonStyle,
 } from "discord.js";
 import { mockDb } from "../utils/mockDb";
 import { updateQueueMessage } from "../utils/updateQueueMessage";
@@ -158,13 +160,66 @@ module.exports = {
 
           await i.deferUpdate();
 
-          // If both selections are made, stop the collector
+          // If both selections are made, show confirmation button
           if (selectedProject && selectedTechnologies.length > 0) {
-            collector.stop();
+            const confirmButton = new ButtonBuilder()
+              .setCustomId("confirm-request")
+              .setLabel("Confirm Request")
+              .setStyle(ButtonStyle.Primary);
+
+            const cancelButton = new ButtonBuilder()
+              .setCustomId("cancel-request")
+              .setLabel("Cancel")
+              .setStyle(ButtonStyle.Secondary);
+
+            const buttonRow =
+              new ActionRowBuilder<ButtonBuilder>().addComponents(
+                confirmButton,
+                cancelButton
+              );
+
+            await interaction.editReply({
+              content: `Please confirm your request:\nProject: ${selectedProject}\nTechnologies: ${selectedTechnologies.join(
+                ", "
+              )}`,
+              components: [buttonRow],
+            });
+
+            // Create a new collector for the buttons
+            const buttonCollector = response.createMessageComponentCollector({
+              componentType: ComponentType.Button,
+              time: 60000,
+            });
+
+            buttonCollector.on("collect", async (i) => {
+              if (i.user.id !== interaction.user.id) return;
+
+              if (i.customId === "confirm-request") {
+                await i.deferUpdate();
+                buttonCollector.stop();
+                collector.stop();
+              } else if (i.customId === "cancel-request") {
+                await i.editReply({
+                  content: "Request cancelled.",
+                  components: [],
+                });
+                buttonCollector.stop();
+                collector.stop();
+              }
+            });
+
+            buttonCollector.on("end", async (collected) => {
+              if (collected.size === 0) {
+                await interaction.editReply({
+                  content: "Request timed out.",
+                  components: [],
+                });
+              }
+            });
           }
         });
 
-        // Wait for both selections
+        // Wait for both selections and confirmation
         await new Promise((resolve) => {
           collector.on("end", resolve);
         });
