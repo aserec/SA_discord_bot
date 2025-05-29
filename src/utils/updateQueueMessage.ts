@@ -38,6 +38,13 @@ const formatTimestamp = (date: Date): string => {
   });
 };
 
+// Check if a request is within the last 24 hours
+const isWithinLast24Hours = (date: Date): boolean => {
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return date >= oneDayAgo;
+};
+
 // Create the queue message content
 export const createQueueMessage = async (
   requests: Request[],
@@ -86,9 +93,9 @@ export const createQueueMessage = async (
 
   // For each project, group by status and add content
   Array.from(allProjects).forEach((project, index) => {
-    // Add project title
-    const projectHeader = `**📋 ${project}**\n`;
-    const divider = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    // Add project title with dashes
+    const projectHeader = `**━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📋 ${project}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━**\n\n`;
+    const divider = "\n";
 
     // Check if adding this project would exceed the limit
     if (currentMessage.length + projectHeader.length > 1800) {
@@ -111,7 +118,21 @@ export const createQueueMessage = async (
 
       // Add content for each status in the project
       Object.entries(statusGroups).forEach(([status, statusRequests]) => {
-        const statusHeader = `**${status}** (${statusRequests.length})\n`;
+        // Filter requests based on status
+        let filteredRequests = statusRequests;
+        if (status === "Approved" || status === "Rejected") {
+          filteredRequests = statusRequests.filter((req) =>
+            isWithinLast24Hours(req.timestamp)
+          );
+        }
+
+        if (filteredRequests.length === 0) return;
+
+        const statusHeader = `**${
+          status === "Approved" ? "✅" : status === "Rejected" ? "❌" : "⏳"
+        } ${status}${
+          status === "Approved" || status === "Rejected" ? " (last 24h)" : ""
+        }** (${filteredRequests.length})\n`;
 
         // Check if adding this status would exceed the limit
         if (currentMessage.length + statusHeader.length > 1800) {
@@ -121,7 +142,7 @@ export const createQueueMessage = async (
           currentMessage += statusHeader;
         }
 
-        statusRequests.forEach((req) => {
+        filteredRequests.forEach((req) => {
           // Ensure request has an _id
           if (!req._id) {
             req._id = Math.random().toString(36).substr(2, 9);
@@ -170,7 +191,21 @@ export const createQueueMessage = async (
 
       // Add content for each status in the project
       Object.entries(statusGroups).forEach(([status, statusRequests]) => {
-        const statusHeader = `**${status} Reassignment Requests** (${statusRequests.length})\n`;
+        // Filter requests based on status
+        let filteredRequests = statusRequests;
+        if (status === "Approved" || status === "Rejected") {
+          filteredRequests = statusRequests.filter((req) =>
+            isWithinLast24Hours(req.timestamp)
+          );
+        }
+
+        if (filteredRequests.length === 0) return;
+
+        const statusHeader = `**${
+          status === "Approved" ? "✅" : status === "Rejected" ? "❌" : "⏳"
+        } ${status} Reassignment Requests${
+          status === "Approved" || status === "Rejected" ? " (last 24h)" : ""
+        }** (${filteredRequests.length})\n`;
 
         // Check if adding this status would exceed the limit
         if (currentMessage.length + statusHeader.length > 1800) {
@@ -180,7 +215,7 @@ export const createQueueMessage = async (
           currentMessage += statusHeader;
         }
 
-        statusRequests.forEach((req) => {
+        filteredRequests.forEach((req) => {
           // Ensure request has an _id
           if (!req._id) {
             req._id = Math.random().toString(36).substr(2, 9);
@@ -238,26 +273,38 @@ export const createQueueMessage = async (
 
   // Add regular requests to select menu
   requests.forEach((req) => {
-    const requestId = requestIdMap.get(req._id);
-    console.log("Regular request mapping:", { _id: req._id, requestId });
-    selectMenu.addOptions({
-      label: `[${requestId}] ${req.username.split("#")[0]} - ${req.project}`,
-      description: `${req.technologies.join(", ")} - ${req.status}`,
-      value: `regular_${req._id}_${req.username}_${req.project}`,
-    });
+    // Only add non-approved/rejected requests or those within last 24h
+    if (
+      (req.status !== "Approved" && req.status !== "Rejected") ||
+      isWithinLast24Hours(req.timestamp)
+    ) {
+      const requestId = requestIdMap.get(req._id);
+      console.log("Regular request mapping:", { _id: req._id, requestId });
+      selectMenu.addOptions({
+        label: `[${requestId}] ${req.username.split("#")[0]} - ${req.project}`,
+        description: `${req.technologies.join(", ")} - ${req.status}`,
+        value: `regular_${req._id}_${req.username}_${req.project}`,
+      });
+    }
   });
 
   // Add reassignment requests to select menu
   reassignmentRequests.forEach((req) => {
-    const requestId = requestIdMap.get(req._id);
-    console.log("Reassignment request mapping:", { _id: req._id, requestId });
-    selectMenu.addOptions({
-      label: `[${requestId}] ${req.username.split("#")[0]} - ${
-        req.project
-      } (Reassignment)`,
-      description: `Item ${req.itemNumber} - ${req.status}`,
-      value: `reassignment_${req._id}_${req.username}_${req.project}_${req.itemNumber}`,
-    });
+    // Only add non-approved/rejected requests or those within last 24h
+    if (
+      (req.status !== "Approved" && req.status !== "Rejected") ||
+      isWithinLast24Hours(req.timestamp)
+    ) {
+      const requestId = requestIdMap.get(req._id);
+      console.log("Reassignment request mapping:", { _id: req._id, requestId });
+      selectMenu.addOptions({
+        label: `[${requestId}] ${req.username.split("#")[0]} - ${
+          req.project
+        } (Reassignment)`,
+        description: `Item ${req.itemNumber} - ${req.status}`,
+        value: `reassignment_${req._id}_${req.username}_${req.project}_${req.itemNumber}`,
+      });
+    }
   });
 
   // Create action buttons
