@@ -4,6 +4,11 @@ import {
   TextChannel,
   WebhookClient,
   PermissionsBitField,
+  PermissionFlagsBits,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
 } from "discord.js";
 import { mockDb } from "../utils/mockDb";
 import { createQueueMessage } from "../utils/updateQueueMessage";
@@ -12,6 +17,15 @@ interface Request {
   project: string;
   technologies: string[];
   username: string;
+  status: string;
+  timestamp: Date;
+}
+
+interface ReassignmentRequest {
+  project: string;
+  itemNumber: string;
+  username: string;
+  userId: string;
   status: string;
   timestamp: Date;
 }
@@ -28,23 +42,9 @@ const exampleRequests: Request[] = [
   },
   {
     project: "Project-A",
-    technologies: ["TypeScript", "React"],
-    username: "sarah.coder#5678",
-    status: "Pending",
-    timestamp: new Date(),
-  },
-  {
-    project: "Project-A",
     technologies: ["Node.js", "MongoDB"],
     username: "mike.tech#9012",
     status: "Approved",
-    timestamp: new Date(),
-  },
-  {
-    project: "Project-A",
-    technologies: ["Docker", "Kubernetes"],
-    username: "lisa.devops#3456",
-    status: "Rejected",
     timestamp: new Date(),
   },
 
@@ -63,57 +63,24 @@ const exampleRequests: Request[] = [
     status: "Approved",
     timestamp: new Date(),
   },
+];
+
+// Example reassignment requests for testing
+const exampleReassignmentRequests: ReassignmentRequest[] = [
+  {
+    project: "Project-A",
+    itemNumber: "12345",
+    username: "alex.dev#1234",
+    userId: "123456789012345678", // Example user ID
+    status: "Pending",
+    timestamp: new Date(),
+  },
   {
     project: "Project-B",
-    technologies: ["PostgreSQL", "Redis"],
-    username: "david.dba#6789",
-    status: "Rejected",
-    timestamp: new Date(),
-  },
-
-  // Project-C requests
-  {
-    project: "Project-C",
-    technologies: ["React Native", "Firebase"],
-    username: "anna.mobile#0123",
-    status: "Pending",
-    timestamp: new Date(),
-  },
-  {
-    project: "Project-C",
-    technologies: ["AWS", "Lambda"],
-    username: "tom.cloud#4567",
+    itemNumber: "67890",
+    username: "sarah.coder#5678",
+    userId: "876543210987654321", // Example user ID
     status: "Approved",
-    timestamp: new Date(),
-  },
-  {
-    project: "Project-C",
-    technologies: ["GraphQL", "Apollo"],
-    username: "rachel.api#8901",
-    status: "Pending",
-    timestamp: new Date(),
-  },
-
-  // Project-D requests
-  {
-    project: "Project-D",
-    technologies: ["Vue.js", "Vuetify"],
-    username: "peter.ui#2345",
-    status: "Pending",
-    timestamp: new Date(),
-  },
-  {
-    project: "Project-D",
-    technologies: ["Go", "gRPC"],
-    username: "sophie.backend#6789",
-    status: "Approved",
-    timestamp: new Date(),
-  },
-  {
-    project: "Project-D",
-    technologies: ["Elasticsearch", "Kibana"],
-    username: "chris.search#0123",
-    status: "Rejected",
     timestamp: new Date(),
   },
 ];
@@ -132,6 +99,14 @@ module.exports = {
       option
         .setName("project-filter")
         .setDescription("Optional: Filter requests by project name (contains)")
+        .setRequired(false)
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName("show-reassignment-requests")
+        .setDescription(
+          "Whether to show reassignment requests in the queue (default: true)"
+        )
         .setRequired(false)
     ),
 
@@ -198,8 +173,21 @@ module.exports = {
         }
       }
 
+      // Insert example reassignment requests if the collection is empty
+      const existingReassignmentRequests = await mockDb
+        .collection("reassignmentRequests")
+        .find();
+      if (existingReassignmentRequests.length === 0) {
+        for (const request of exampleReassignmentRequests) {
+          await mockDb.collection("reassignmentRequests").insertOne(request);
+        }
+      }
+
       // Get current requests
       const requests = await mockDb.collection("requests").find();
+      const reassignmentRequests = await mockDb
+        .collection("reassignmentRequests")
+        .find();
 
       // Apply project filter if specified
       const projectFilter = interaction.options.get("project-filter")?.value as
@@ -210,28 +198,42 @@ module.exports = {
             req.project.toLowerCase().includes(projectFilter.toLowerCase())
           )
         : requests;
+      const filteredReassignmentRequests = projectFilter
+        ? reassignmentRequests.filter((req) =>
+            req.project.toLowerCase().includes(projectFilter.toLowerCase())
+          )
+        : reassignmentRequests;
 
-      // Create and send the initial message
-      const content = createQueueMessage(filteredRequests);
-      const message = await webhook.send({ content });
+      // Get showReassignmentRequests option (default to true if not specified)
+      const showReassignmentRequests =
+        (interaction.options.get("show-reassignment-requests")
+          ?.value as boolean) ?? true;
 
-      // Store the webhook and message IDs in the database
-      await mockDb.collection("queueMonitor").updateOne(
-        { _id: "monitor" },
-        {
-          $set: {
-            webhookId: webhook.id,
-            webhookToken: webhook.token,
-            messageId: message.id,
-            channelId: channel.id,
-            projectFilter: projectFilter || null,
-          },
-        },
-        { upsert: true }
+      // Create the message content
+      const { content, components } = await createQueueMessage(
+        filteredRequests,
+        showReassignmentRequests ? filteredReassignmentRequests : []
       );
 
-      return interaction.editReply(
-        `Queue monitor has been set up in ${channel}. The message will be automatically updated when requests change.`
+      // Send the message
+      const message = await webhook.send({
+        content,
+        components,
+      });
+
+      // Store the webhook and message IDs in the database
+      await mockDb.collection("queueMonitor").insertOne({
+        _id: "monitor",
+        channelId: channel.id,
+        webhookId: webhook.id,
+        webhookToken: webhook.token,
+        messageId: message.id,
+        projectFilter: projectFilter,
+        showReassignmentRequests: showReassignmentRequests,
+      });
+
+      await interaction.editReply(
+        "Queue monitor has been set up successfully!"
       );
     } catch (error) {
       console.error("Error setting up queue monitor:", error);

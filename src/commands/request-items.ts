@@ -14,6 +14,7 @@ interface Request {
   project: string;
   technologies: string[];
   username: string;
+  userId: string;
   status: string;
   timestamp: Date;
 }
@@ -304,6 +305,7 @@ module.exports = {
         project: selectedProject!,
         technologies: selectedTechnologies,
         username: interaction.user.tag,
+        userId: interaction.user.id,
         status: "Pending",
         timestamp: new Date(),
       };
