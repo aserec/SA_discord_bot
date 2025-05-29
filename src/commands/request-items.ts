@@ -52,197 +52,161 @@ const saveRequest = async (request: any): Promise<boolean> => {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("request-items")
-    .setDescription("Request items for a project")
-    .addStringOption((option) =>
-      option
-        .setName("config")
-        .setDescription(
-          "Configuration option (e.g., 'repeat' to use last selections)"
-        )
-        .setRequired(false)
-    ),
+    .setDescription("Request items for a project"),
 
   async execute(interaction: CommandInteraction) {
     await interaction.deferReply({ ephemeral: true });
 
     try {
-      const configOption = interaction.options.get("config");
-      const repeat = configOption?.value === "repeat";
-      let selectedProject: string | null = null;
-      let selectedTechnologies: string[] = [];
+      // Get user's roles/tags
+      const member = interaction.guild?.members.cache.get(interaction.user.id);
+      const userTags = member?.roles.cache.map((role) => role.name) || [];
 
-      // If repeat is true, try to get the last selections
-      if (repeat) {
-        const lastSelections = await mockDb
-          .collection("lastSelections")
-          .findOne({
-            command: "request-items",
-          });
-        if (lastSelections) {
-          selectedProject = lastSelections.project;
-          selectedTechnologies = lastSelections.technologies;
-        }
+      // Get user's projects and technologies
+      const userProjects = getUserProjects(userTags);
+      const userTechnologies = getUserTechnologies(userTags);
+
+      if (userProjects.length === 0) {
+        return interaction.editReply("You are not part of any projects.");
       }
 
-      // If not repeating or no last selections found, show the selection menus
-      if (!selectedProject || selectedTechnologies.length === 0) {
-        // Get user's roles/tags
-        const member = interaction.guild?.members.cache.get(
-          interaction.user.id
+      if (userTechnologies.length === 0) {
+        return interaction.editReply(
+          "You don't have any approved technologies."
         );
-        const userTags = member?.roles.cache.map((role) => role.name) || [];
+      }
 
-        // Get user's projects and technologies
-        const userProjects = getUserProjects(userTags);
-        const userTechnologies = getUserTechnologies(userTags);
+      // Create project selection menu
+      const projectSelect = new StringSelectMenuBuilder()
+        .setCustomId("project-select")
+        .setPlaceholder("Select a project")
+        .addOptions(
+          userProjects.map((project) => ({
+            label: project,
+            value: project,
+          }))
+        );
 
-        if (userProjects.length === 0) {
-          return interaction.editReply("You are not part of any projects.");
+      // Create technology selection menu (multiselect)
+      const techSelect = new StringSelectMenuBuilder()
+        .setCustomId("tech-select")
+        .setPlaceholder("Select technologies")
+        .setMinValues(1)
+        .setMaxValues(userTechnologies.length)
+        .addOptions(
+          userTechnologies.map((tech) => ({
+            label: tech,
+            value: tech,
+          }))
+        );
+
+      const projectRow =
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          projectSelect
+        );
+      const techRow =
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          techSelect
+        );
+
+      // Send both selection menus
+      const response = await interaction.editReply({
+        content: "Please select a project and technologies:",
+        components: [projectRow, techRow],
+      });
+
+      // Create collectors for both dropdowns
+      const collector = response.createMessageComponentCollector({
+        componentType: ComponentType.StringSelect,
+        time: 60000,
+      });
+
+      let selectedProject: string | null = null;
+      let selectedTechnologies: string[] = [];
+      let isCancelled = false;
+
+      collector.on("collect", async (i) => {
+        if (i.user.id !== interaction.user.id) return;
+
+        if (i.customId === "project-select") {
+          selectedProject = i.values[0];
+        } else if (i.customId === "tech-select") {
+          selectedTechnologies = i.values;
         }
 
-        if (userTechnologies.length === 0) {
-          return interaction.editReply(
-            "You don't have any approved technologies."
-          );
-        }
+        await i.deferUpdate();
 
-        // Create project selection menu
-        const projectSelect = new StringSelectMenuBuilder()
-          .setCustomId("project-select")
-          .setPlaceholder("Select a project")
-          .addOptions(
-            userProjects.map((project) => ({
-              label: project,
-              value: project,
-            }))
-          );
+        // If both selections are made, show confirmation button
+        if (selectedProject && selectedTechnologies.length > 0) {
+          const confirmButton = new ButtonBuilder()
+            .setCustomId("confirm-request")
+            .setLabel("Confirm Request")
+            .setStyle(ButtonStyle.Primary);
 
-        // Create technology selection menu (multiselect)
-        const techSelect = new StringSelectMenuBuilder()
-          .setCustomId("tech-select")
-          .setPlaceholder("Select technologies")
-          .setMinValues(1)
-          .setMaxValues(userTechnologies.length)
-          .addOptions(
-            userTechnologies.map((tech) => ({
-              label: tech,
-              value: tech,
-            }))
+          const cancelButton = new ButtonBuilder()
+            .setCustomId("cancel-request")
+            .setLabel("Cancel")
+            .setStyle(ButtonStyle.Secondary);
+
+          const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            confirmButton,
+            cancelButton
           );
 
-        const projectRow =
-          new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-            projectSelect
-          );
-        const techRow =
-          new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-            techSelect
-          );
+          await interaction.editReply({
+            content: `Please confirm your request:\nProject: ${selectedProject}\nTechnologies: ${selectedTechnologies.join(
+              ", "
+            )}`,
+            components: [buttonRow],
+          });
 
-        // Send both selection menus
-        const response = await interaction.editReply({
-          content: "Please select a project and technologies:",
-          components: [projectRow, techRow],
-        });
+          // Create a new collector for the buttons
+          const buttonCollector = response.createMessageComponentCollector({
+            componentType: ComponentType.Button,
+            time: 60000,
+          });
 
-        // Create collectors for both dropdowns
-        const collector = response.createMessageComponentCollector({
-          componentType: ComponentType.StringSelect,
-          time: 60000,
-        });
+          buttonCollector.on("collect", async (i) => {
+            if (i.user.id !== interaction.user.id) return;
 
-        collector.on("collect", async (i) => {
-          if (i.user.id !== interaction.user.id) return;
+            if (i.customId === "confirm-request") {
+              await i.deferUpdate();
+              buttonCollector.stop();
+              collector.stop();
+            } else if (i.customId === "cancel-request") {
+              isCancelled = true;
+              buttonCollector.stop();
+              collector.stop();
+            }
+          });
 
-          if (i.customId === "project-select") {
-            selectedProject = i.values[0];
-          } else if (i.customId === "tech-select") {
-            selectedTechnologies = i.values;
-          }
-
-          await i.deferUpdate();
-
-          // If both selections are made, show confirmation button
-          if (selectedProject && selectedTechnologies.length > 0) {
-            const confirmButton = new ButtonBuilder()
-              .setCustomId("confirm-request")
-              .setLabel("Confirm Request")
-              .setStyle(ButtonStyle.Primary);
-
-            const cancelButton = new ButtonBuilder()
-              .setCustomId("cancel-request")
-              .setLabel("Cancel")
-              .setStyle(ButtonStyle.Secondary);
-
-            const buttonRow =
-              new ActionRowBuilder<ButtonBuilder>().addComponents(
-                confirmButton,
-                cancelButton
-              );
-
-            await interaction.editReply({
-              content: `Please confirm your request:\nProject: ${selectedProject}\nTechnologies: ${selectedTechnologies.join(
-                ", "
-              )}`,
-              components: [buttonRow],
-            });
-
-            // Create a new collector for the buttons
-            const buttonCollector = response.createMessageComponentCollector({
-              componentType: ComponentType.Button,
-              time: 60000,
-            });
-
-            buttonCollector.on("collect", async (i) => {
-              if (i.user.id !== interaction.user.id) return;
-
-              if (i.customId === "confirm-request") {
-                await i.deferUpdate();
-                buttonCollector.stop();
-                collector.stop();
-              } else if (i.customId === "cancel-request") {
-                await i.editReply({
-                  content: "Request cancelled.",
-                  components: [],
-                });
-                buttonCollector.stop();
-                collector.stop();
-              }
-            });
-
-            buttonCollector.on("end", async (collected) => {
-              if (collected.size === 0) {
-                await interaction.editReply({
-                  content: "Request timed out.",
-                  components: [],
-                });
-              }
-            });
-          }
-        });
-
-        // Wait for both selections and confirmation
-        await new Promise((resolve) => {
-          collector.on("end", resolve);
-        });
-
-        if (!selectedProject || selectedTechnologies.length === 0) {
-          return interaction.editReply({
-            content: "Selection cancelled or timed out.",
-            components: [],
+          buttonCollector.on("end", async (collected) => {
+            if (collected.size === 0) {
+              await interaction.editReply({
+                content: "Request timed out.",
+                components: [],
+              });
+            }
           });
         }
+      });
 
-        // Save the selections for future use
-        await mockDb.collection("lastSelections").updateOne(
-          { command: "request-items" },
-          {
-            $set: {
-              project: selectedProject,
-              technologies: selectedTechnologies,
-            },
-          }
-        );
+      // Wait for both selections and confirmation
+      await new Promise((resolve) => {
+        collector.on("end", resolve);
+      });
+
+      if (
+        !selectedProject ||
+        selectedTechnologies.length === 0 ||
+        isCancelled
+      ) {
+        return interaction.editReply({
+          content: isCancelled
+            ? "Request cancelled."
+            : "Selection cancelled or timed out.",
+          components: [],
+        });
       }
 
       // Check for existing requests for this project and user
@@ -300,7 +264,7 @@ module.exports = {
           });
         }
       }
-      console.log("interaction", interaction);
+
       // Create new request if no existing request found
       const request: Request = {
         project: selectedProject!,
