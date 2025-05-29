@@ -17,6 +17,7 @@ interface Request {
   project: string;
   technologies: string[];
   username: string;
+  userId: string;
   status: string;
   timestamp: Date;
 }
@@ -35,32 +36,102 @@ const exampleRequests: Request[] = [
   // Project-A requests
   {
     project: "Project-A",
-    technologies: ["Python", "JavaScript"],
+    technologies: ["Python", "JavaScript", "React", "Node.js", "MongoDB"],
     username: "alex.dev#1234",
+    userId: "123456789012345678",
     status: "Pending",
     timestamp: new Date(),
   },
   {
     project: "Project-A",
-    technologies: ["Node.js", "MongoDB"],
+    technologies: ["Node.js", "MongoDB", "Express", "TypeScript"],
     username: "mike.tech#9012",
+    userId: "234567890123456789",
     status: "Approved",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-A",
+    technologies: ["Python", "Django", "PostgreSQL", "Docker"],
+    username: "sarah.python#3456",
+    userId: "345678901234567890",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-A",
+    technologies: ["JavaScript", "Vue.js", "Nuxt", "TailwindCSS"],
+    username: "john.frontend#7890",
+    userId: "456789012345678901",
+    status: "Rejected",
     timestamp: new Date(),
   },
 
   // Project-B requests
   {
     project: "Project-B",
-    technologies: ["Java", "Spring Boot"],
+    technologies: ["Java", "Spring Boot", "Hibernate", "MySQL"],
     username: "john.backend#7890",
+    userId: "567890123456789012",
     status: "Pending",
     timestamp: new Date(),
   },
   {
     project: "Project-B",
-    technologies: ["Angular", "TypeScript"],
+    technologies: ["Angular", "TypeScript", "RxJS", "NgRx"],
     username: "emma.frontend#2345",
+    userId: "678901234567890123",
     status: "Approved",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-B",
+    technologies: ["C#", ".NET Core", "Entity Framework", "SQL Server"],
+    username: "mike.dotnet#5678",
+    userId: "789012345678901234",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-B",
+    technologies: ["Ruby", "Rails", "PostgreSQL", "Redis"],
+    username: "lisa.ruby#9012",
+    userId: "890123456789012345",
+    status: "Rejected",
+    timestamp: new Date(),
+  },
+
+  // Project-C requests
+  {
+    project: "Project-C",
+    technologies: ["Go", "Gin", "GORM", "PostgreSQL"],
+    username: "tom.go#1234",
+    userId: "901234567890123456",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-C",
+    technologies: ["PHP", "Laravel", "MySQL", "Redis"],
+    username: "anna.php#5678",
+    userId: "012345678901234567",
+    status: "Approved",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-C",
+    technologies: ["Rust", "Actix", "Diesel", "PostgreSQL"],
+    username: "bob.rust#9012",
+    userId: "123456789012345678",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-C",
+    technologies: ["Elixir", "Phoenix", "Ecto", "PostgreSQL"],
+    username: "jane.elixir#3456",
+    userId: "234567890123456789",
+    status: "Rejected",
     timestamp: new Date(),
   },
 ];
@@ -71,7 +142,23 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     project: "Project-A",
     itemNumber: "12345",
     username: "alex.dev#1234",
-    userId: "123456789012345678", // Example user ID
+    userId: "123456789012345678",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-A",
+    itemNumber: "12346",
+    username: "mike.tech#9012",
+    userId: "234567890123456789",
+    status: "Approved",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-A",
+    itemNumber: "12347",
+    username: "sarah.python#3456",
+    userId: "345678901234567890",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -79,7 +166,39 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     project: "Project-B",
     itemNumber: "67890",
     username: "sarah.coder#5678",
-    userId: "876543210987654321", // Example user ID
+    userId: "456789012345678901",
+    status: "Approved",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-B",
+    itemNumber: "67891",
+    username: "john.backend#7890",
+    userId: "567890123456789012",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-B",
+    itemNumber: "67892",
+    username: "emma.frontend#2345",
+    userId: "678901234567890123",
+    status: "Rejected",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-C",
+    itemNumber: "90123",
+    username: "tom.go#1234",
+    userId: "789012345678901234",
+    status: "Pending",
+    timestamp: new Date(),
+  },
+  {
+    project: "Project-C",
+    itemNumber: "90124",
+    username: "anna.php#5678",
+    userId: "890123456789012345",
     status: "Approved",
     timestamp: new Date(),
   },
@@ -215,11 +334,15 @@ module.exports = {
         showReassignmentRequests ? filteredReassignmentRequests : []
       );
 
-      // Send the message
-      const message = await webhook.send({
-        content,
-        components,
-      });
+      // Send the messages
+      const messages = await Promise.all(
+        content.map((msg, index) =>
+          webhook.send({
+            content: msg,
+            components: index === content.length - 1 ? components : [], // Only add components to the last message
+          })
+        )
+      );
 
       // Store the webhook and message IDs in the database
       await mockDb.collection("queueMonitor").insertOne({
@@ -227,7 +350,7 @@ module.exports = {
         channelId: channel.id,
         webhookId: webhook.id,
         webhookToken: webhook.token,
-        messageId: message.id,
+        messageIds: messages.map((msg) => msg.id), // Store all message IDs
         projectFilter: projectFilter,
         showReassignmentRequests: showReassignmentRequests,
       });

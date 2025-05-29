@@ -43,11 +43,12 @@ export const createQueueMessage = async (
   requests: Request[],
   reassignmentRequests: ReassignmentRequest[]
 ): Promise<{
-  content: string;
+  content: string[];
   components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[];
 }> => {
-  let content = "**Requests Queue**\n";
-  content += `Total Requests: ${
+  const messages: string[] = [];
+  let currentMessage = "**Requests Queue**\n";
+  currentMessage += `Total Requests: ${
     requests.length + reassignmentRequests.length
   }\n\n`;
 
@@ -86,8 +87,16 @@ export const createQueueMessage = async (
   // For each project, group by status and add content
   Array.from(allProjects).forEach((project, index) => {
     // Add project title
-    content += `**📋 ${project}**\n`;
-    content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    const projectHeader = `**📋 ${project}**\n`;
+    const divider = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+
+    // Check if adding this project would exceed the limit
+    if (currentMessage.length + projectHeader.length > 1800) {
+      messages.push(currentMessage);
+      currentMessage = projectHeader;
+    } else {
+      currentMessage += projectHeader;
+    }
 
     // Handle regular requests
     if (projects[project]) {
@@ -102,7 +111,15 @@ export const createQueueMessage = async (
 
       // Add content for each status in the project
       Object.entries(statusGroups).forEach(([status, statusRequests]) => {
-        content += `**${status}** (${statusRequests.length})\n`;
+        const statusHeader = `**${status}** (${statusRequests.length})\n`;
+
+        // Check if adding this status would exceed the limit
+        if (currentMessage.length + statusHeader.length > 1800) {
+          messages.push(currentMessage);
+          currentMessage = statusHeader;
+        } else {
+          currentMessage += statusHeader;
+        }
 
         statusRequests.forEach((req) => {
           // Ensure request has an _id
@@ -117,15 +134,23 @@ export const createQueueMessage = async (
               );
           }
           requestIdMap.set(req._id, currentId);
-          content += `[${currentId}] ${
+          const requestLine = `[${currentId}] ${
             req.username.split("#")[0]
           } - ${req.technologies.join(", ")} - ${formatTimestamp(
             req.timestamp
           )}\n`;
+
+          // Check if adding this request would exceed the limit
+          if (currentMessage.length + requestLine.length > 1800) {
+            messages.push(currentMessage);
+            currentMessage = requestLine;
+          } else {
+            currentMessage += requestLine;
+          }
           currentId++;
         });
 
-        content += "\n";
+        currentMessage += "\n";
       });
     }
 
@@ -145,7 +170,15 @@ export const createQueueMessage = async (
 
       // Add content for each status in the project
       Object.entries(statusGroups).forEach(([status, statusRequests]) => {
-        content += `**${status} Reassignment Requests** (${statusRequests.length})\n`;
+        const statusHeader = `**${status} Reassignment Requests** (${statusRequests.length})\n`;
+
+        // Check if adding this status would exceed the limit
+        if (currentMessage.length + statusHeader.length > 1800) {
+          messages.push(currentMessage);
+          currentMessage = statusHeader;
+        } else {
+          currentMessage += statusHeader;
+        }
 
         statusRequests.forEach((req) => {
           // Ensure request has an _id
@@ -162,21 +195,39 @@ export const createQueueMessage = async (
             );
           }
           requestIdMap.set(req._id, currentId);
-          content += `[${currentId}] ${req.username.split("#")[0]} - Item ${
-            req.itemNumber
-          } - ${formatTimestamp(req.timestamp)}\n`;
+          const requestLine = `[${currentId}] ${
+            req.username.split("#")[0]
+          } - Item ${req.itemNumber} - ${formatTimestamp(req.timestamp)}\n`;
+
+          // Check if adding this request would exceed the limit
+          if (currentMessage.length + requestLine.length > 1800) {
+            messages.push(currentMessage);
+            currentMessage = requestLine;
+          } else {
+            currentMessage += requestLine;
+          }
           currentId++;
         });
 
-        content += "\n";
+        currentMessage += "\n";
       });
     }
 
     // Add a divider after each project except the last one
     if (index < Array.from(allProjects).length - 1) {
-      content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+      if (currentMessage.length + divider.length > 1800) {
+        messages.push(currentMessage);
+        currentMessage = divider;
+      } else {
+        currentMessage += divider;
+      }
     }
   });
+
+  // Add the last message if it has content
+  if (currentMessage.length > 0) {
+    messages.push(currentMessage);
+  }
 
   // Create select menu with all requests
   const selectMenu = new StringSelectMenuBuilder()
@@ -238,7 +289,7 @@ export const createQueueMessage = async (
     )
   );
 
-  return { content, components };
+  return { content: messages, components };
 };
 
 // Update the queue message
@@ -288,11 +339,44 @@ export const updateQueueMessage = async () => {
       token: monitor.webhookToken,
     });
 
-    // Update the message
-    await webhook.editMessage(monitor.messageId, {
-      content,
-      components,
-    });
+    try {
+      // Delete existing messages
+      if (monitor.messageIds) {
+        await Promise.all(
+          monitor.messageIds.map(async (id: string) => {
+            try {
+              await webhook.deleteMessage(id);
+            } catch (error) {
+              console.log(`Failed to delete message ${id}:`, error);
+              // Continue even if message deletion fails
+            }
+          })
+        );
+      }
+
+      // Send new messages
+      const messages = await Promise.all(
+        content.map((msg, index) =>
+          webhook.send({
+            content: msg,
+            components: index === content.length - 1 ? components : [], // Only add components to the last message
+          })
+        )
+      );
+
+      // Update the message IDs in the database
+      await mockDb.collection("queueMonitor").updateOne(
+        { _id: "monitor" },
+        {
+          $set: {
+            messageIds: messages.map((msg) => msg.id),
+          },
+        }
+      );
+    } catch (error) {
+      console.error("Error updating messages:", error);
+      // Don't throw the error, just log it
+    }
   } catch (error) {
     console.error("Error updating queue message:", error);
   }
@@ -396,6 +480,11 @@ export const handleQueueButtonInteraction = async (interaction: any) => {
           .setDisabled(true)
       );
 
+      // Acknowledge the interaction first
+      await interaction.update({
+        components: [interaction.message.components[0], row],
+      });
+
       if (type === "reassignment") {
         console.log("Looking for reassignment request with ID:", requestId);
         const request = await mockDb
@@ -406,7 +495,7 @@ export const handleQueueButtonInteraction = async (interaction: any) => {
 
         console.log("Found request:", request);
         if (!request) {
-          await interaction.reply({
+          await interaction.followUp({
             content: "Reassignment request not found.",
             ephemeral: true,
           });
@@ -454,7 +543,7 @@ export const handleQueueButtonInteraction = async (interaction: any) => {
         });
 
         if (!request) {
-          await interaction.reply({
+          await interaction.followUp({
             content: "Request not found.",
             ephemeral: true,
           });
@@ -501,18 +590,21 @@ export const handleQueueButtonInteraction = async (interaction: any) => {
 
       // Update the queue message
       await updateQueueMessage();
-
-      // Acknowledge the interaction and disable buttons
-      await interaction.update({
-        components: [interaction.message.components[0], row],
-      });
     }
   } catch (error) {
     console.error("Error handling button interaction:", error);
-    await interaction.reply({
-      content:
-        "There was an error processing your action. Please try again later.",
-      ephemeral: true,
-    });
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content:
+          "There was an error processing your action. Please try again later.",
+        ephemeral: true,
+      });
+    } else {
+      await interaction.followUp({
+        content:
+          "There was an error processing your action. Please try again later.",
+        ephemeral: true,
+      });
+    }
   }
 };
