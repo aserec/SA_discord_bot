@@ -2,13 +2,6 @@
 
 A Discord bot made in TypeScript that helps manage and consult a custom LLM to answer frequently asked questions, guidelines, and other documents related to different projects.
 
-## Features
-
-- **Ask Questions**: Use the `/ask` command or mention the bot to ask questions about specific projects.
-- **Upload Documents**: Upload project-specific documents for the bot to learn from using the `/upload` command.
-- **Send Messages**: Send targeted messages to team members regarding specific projects with the `/send` command.
-- **Project Management**: List all available projects and their documentation with the `/projects` command.
-- **Natural Language Processing**: The bot can understand when you're asking about a specific project or when you're giving a command.
 
 ## Setup
 
@@ -60,45 +53,30 @@ A Discord bot made in TypeScript that helps manage and consult a custom LLM to a
 
 ## Usage
 
-### Adding Documents
+## Commands
 
-1. Use the `/upload` command to add a document to a specific project:
-   ```
-   /upload project:Project-X type:guidelines document:[upload a text file]
-   ```
+### /setup-queue-monitor
+Set up a queue monitor in a specified channel. This command:
+- Lets you choose a channel for the monitor.
+- Optionally filter requests by project name.
+- Optionally show/hide reassignment requests.
+- The bot creates a webhook in the channel, posts the current queue, and keeps it updated.
+- Requires permissions to manage webhooks and send messages.
 
-   Document types:
-   - `guidelines`: General guidelines for the project
-   - `faq`: Frequently asked questions
-   - `documentation`: Technical documentation
+### /request-items
+Request items (technologies) for a project. This command:
+- Optionally, you can use the "repeat" config to reuse your last selections.
+- If not repeating, you select a project and technologies from dropdowns (based on your roles).
+- Confirms your selection before submitting.
+- If you already have a request for the project, it updates it with new technologies.
+- Otherwise, it creates a new request.
 
-2. The bot will process and store the document, making it available for future queries.
-
-### Asking Questions
-
-1. You can ask the bot questions in two ways:
-   - Using the `/ask` command:
-     ```
-     /ask question:What are the deadlines for Project-X? project:Project-X
-     ```
-   
-   - Mentioning the bot:
-     ```
-     @SuperAnnotateBot What are the deadlines for Project-X?
-     ```
-
-2. The bot will analyze the question, identify the project context (if provided), and search for relevant information in its knowledge base.
-
-### Sending Messages
-
-Use the `/send` command to send messages to team members:
-```
-/send user:@JohnDoe project:Project-X message:Your tracked time is overdue. Please review.
-```
-
-### Viewing Projects
-
-Use the `/projects` command to list all available projects and their associated documentation.
+### /request-reassignment
+Request reassignment of an item in a project. This command:
+- You must specify the item number and project.
+- Checks if you have access to the project.
+- Confirms your request before submitting.
+- Prevents duplicate reassignment requests for the same item/project/user.
 
 ## Project Structure
 
@@ -106,7 +84,6 @@ Use the `/projects` command to list all available projects and their associated 
 src/
 ├── commands/       # Slash commands
 ├── events/         # Discord event handlers
-├── llm/            # LLM integration logic
 ├── utils/          # Utility functions
 ├── data/           # Project documents
 │   └── projects/   # Project-specific folders
@@ -121,15 +98,3 @@ src/
 2. Export an object with `data` (SlashCommandBuilder) and `execute` (function) properties.
 3. Run `npm run deploy` to register the new commands with Discord.
 4. The command will be automatically loaded when the bot starts.
-
-### Customizing LLM Integration
-
-The LLM processing logic is located in `src/llm/llmProcessor.ts`. You can modify this file to:
-- Change how projects are detected in messages
-- Adjust the response generation logic
-- Implement additional context processing
-- Modify command detection patterns
-
-## License
-
-ISC 
