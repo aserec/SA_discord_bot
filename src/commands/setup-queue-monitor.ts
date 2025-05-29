@@ -18,6 +18,7 @@ interface Request {
   technologies: string[];
   username: string;
   userId: string;
+  displayName: string;
   status: string;
   timestamp: Date;
 }
@@ -27,6 +28,7 @@ interface ReassignmentRequest {
   itemNumber: string;
   username: string;
   userId: string;
+  displayName: string;
   status: string;
   timestamp: Date;
 }
@@ -39,6 +41,7 @@ const exampleRequests: Request[] = [
     technologies: ["Python", "JavaScript", "React", "Node.js", "MongoDB"],
     username: "alex.dev#1234",
     userId: "123456789012345678",
+    displayName: "Alex Developer",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -47,6 +50,7 @@ const exampleRequests: Request[] = [
     technologies: ["Node.js", "MongoDB", "Express", "TypeScript"],
     username: "mike.tech#9012",
     userId: "234567890123456789",
+    displayName: "Mike Tech",
     status: "Approved",
     timestamp: new Date(),
   },
@@ -55,6 +59,7 @@ const exampleRequests: Request[] = [
     technologies: ["Python", "Django", "PostgreSQL", "Docker"],
     username: "sarah.python#3456",
     userId: "345678901234567890",
+    displayName: "Sarah Python",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -63,6 +68,7 @@ const exampleRequests: Request[] = [
     technologies: ["JavaScript", "Vue.js", "Nuxt", "TailwindCSS"],
     username: "john.frontend#7890",
     userId: "456789012345678901",
+    displayName: "John Frontend",
     status: "Rejected",
     timestamp: new Date(),
   },
@@ -73,6 +79,7 @@ const exampleRequests: Request[] = [
     technologies: ["Java", "Spring Boot", "Hibernate", "MySQL"],
     username: "john.backend#7890",
     userId: "567890123456789012",
+    displayName: "John Backend",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -81,6 +88,7 @@ const exampleRequests: Request[] = [
     technologies: ["Angular", "TypeScript", "RxJS", "NgRx"],
     username: "emma.frontend#2345",
     userId: "678901234567890123",
+    displayName: "Emma Frontend",
     status: "Approved",
     timestamp: new Date(),
   },
@@ -89,6 +97,7 @@ const exampleRequests: Request[] = [
     technologies: ["C#", ".NET Core", "Entity Framework", "SQL Server"],
     username: "mike.dotnet#5678",
     userId: "789012345678901234",
+    displayName: "Mike .NET",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -97,6 +106,7 @@ const exampleRequests: Request[] = [
     technologies: ["Ruby", "Rails", "PostgreSQL", "Redis"],
     username: "lisa.ruby#9012",
     userId: "890123456789012345",
+    displayName: "Lisa Ruby",
     status: "Rejected",
     timestamp: new Date(),
   },
@@ -107,6 +117,7 @@ const exampleRequests: Request[] = [
     technologies: ["Go", "Gin", "GORM", "PostgreSQL"],
     username: "tom.go#1234",
     userId: "901234567890123456",
+    displayName: "Tom Go",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -115,6 +126,7 @@ const exampleRequests: Request[] = [
     technologies: ["PHP", "Laravel", "MySQL", "Redis"],
     username: "anna.php#5678",
     userId: "012345678901234567",
+    displayName: "Anna PHP",
     status: "Approved",
     timestamp: new Date(),
   },
@@ -123,6 +135,7 @@ const exampleRequests: Request[] = [
     technologies: ["Rust", "Actix", "Diesel", "PostgreSQL"],
     username: "bob.rust#9012",
     userId: "123456789012345678",
+    displayName: "Bob Rust",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -131,6 +144,7 @@ const exampleRequests: Request[] = [
     technologies: ["Elixir", "Phoenix", "Ecto", "PostgreSQL"],
     username: "jane.elixir#3456",
     userId: "234567890123456789",
+    displayName: "Jane Elixir",
     status: "Rejected",
     timestamp: new Date(),
   },
@@ -143,6 +157,7 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     itemNumber: "12345",
     username: "alex.dev#1234",
     userId: "123456789012345678",
+    displayName: "Alex Developer",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -151,6 +166,7 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     itemNumber: "12346",
     username: "mike.tech#9012",
     userId: "234567890123456789",
+    displayName: "Mike Tech",
     status: "Approved",
     timestamp: new Date(),
   },
@@ -159,6 +175,7 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     itemNumber: "12347",
     username: "sarah.python#3456",
     userId: "345678901234567890",
+    displayName: "Sarah Python",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -167,6 +184,7 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     itemNumber: "67890",
     username: "sarah.coder#5678",
     userId: "456789012345678901",
+    displayName: "Sarah Coder",
     status: "Approved",
     timestamp: new Date(),
   },
@@ -175,6 +193,7 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     itemNumber: "67891",
     username: "john.backend#7890",
     userId: "567890123456789012",
+    displayName: "John Backend",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -183,6 +202,7 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     itemNumber: "67892",
     username: "emma.frontend#2345",
     userId: "678901234567890123",
+    displayName: "Emma Frontend",
     status: "Rejected",
     timestamp: new Date(),
   },
@@ -191,6 +211,7 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     itemNumber: "90123",
     username: "tom.go#1234",
     userId: "789012345678901234",
+    displayName: "Tom Go",
     status: "Pending",
     timestamp: new Date(),
   },
@@ -199,6 +220,7 @@ const exampleReassignmentRequests: ReassignmentRequest[] = [
     itemNumber: "90124",
     username: "anna.php#5678",
     userId: "890123456789012345",
+    displayName: "Anna PHP",
     status: "Approved",
     timestamp: new Date(),
   },

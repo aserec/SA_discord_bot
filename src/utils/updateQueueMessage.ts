@@ -15,6 +15,7 @@ interface Request {
   userId: string;
   status: string;
   timestamp: Date;
+  displayName?: string;
 }
 
 interface ReassignmentRequest {
@@ -25,6 +26,7 @@ interface ReassignmentRequest {
   userId: string;
   status: string;
   timestamp: Date;
+  displayName?: string;
 }
 
 // Format timestamp to a more readable format
@@ -142,6 +144,13 @@ export const createQueueMessage = async (
           currentMessage += statusHeader;
         }
 
+        // Sort requests by ID
+        filteredRequests.sort((a, b) => {
+          const idA = requestIdMap.get(a._id) || 0;
+          const idB = requestIdMap.get(b._id) || 0;
+          return idA - idB;
+        });
+
         filteredRequests.forEach((req) => {
           // Ensure request has an _id
           if (!req._id) {
@@ -156,10 +165,10 @@ export const createQueueMessage = async (
           }
           requestIdMap.set(req._id, currentId);
           const requestLine = `[${currentId}] ${
-            req.username.split("#")[0]
-          } - ${req.technologies.join(", ")} - ${formatTimestamp(
-            req.timestamp
-          )}\n`;
+            req.displayName || req.username.split("#")[0]
+          } (${req.username.split("#")[0]}) - ${req.technologies.join(
+            ", "
+          )} - ${formatTimestamp(req.timestamp)}\n`;
 
           // Check if adding this request would exceed the limit
           if (currentMessage.length + requestLine.length > 1800) {
@@ -215,6 +224,13 @@ export const createQueueMessage = async (
           currentMessage += statusHeader;
         }
 
+        // Sort requests by ID
+        filteredRequests.sort((a, b) => {
+          const idA = requestIdMap.get(a._id) || 0;
+          const idB = requestIdMap.get(b._id) || 0;
+          return idA - idB;
+        });
+
         filteredRequests.forEach((req) => {
           // Ensure request has an _id
           if (!req._id) {
@@ -231,8 +247,10 @@ export const createQueueMessage = async (
           }
           requestIdMap.set(req._id, currentId);
           const requestLine = `[${currentId}] ${
-            req.username.split("#")[0]
-          } - Item ${req.itemNumber} - ${formatTimestamp(req.timestamp)}\n`;
+            req.displayName || req.username.split("#")[0]
+          } (${req.username.split("#")[0]}) - Item ${
+            req.itemNumber
+          } - ${formatTimestamp(req.timestamp)}\n`;
 
           // Check if adding this request would exceed the limit
           if (currentMessage.length + requestLine.length > 1800) {
@@ -281,7 +299,9 @@ export const createQueueMessage = async (
       const requestId = requestIdMap.get(req._id);
       console.log("Regular request mapping:", { _id: req._id, requestId });
       selectMenu.addOptions({
-        label: `[${requestId}] ${req.username.split("#")[0]} - ${req.project}`,
+        label: `[${requestId}] ${
+          req.displayName || req.username.split("#")[0]
+        } (${req.username.split("#")[0]}) - ${req.project}`,
         description: `${req.technologies.join(", ")} - ${req.status}`,
         value: `regular_${req._id}_${req.username}_${req.project}`,
       });
@@ -298,14 +318,23 @@ export const createQueueMessage = async (
       const requestId = requestIdMap.get(req._id);
       console.log("Reassignment request mapping:", { _id: req._id, requestId });
       selectMenu.addOptions({
-        label: `[${requestId}] ${req.username.split("#")[0]} - ${
-          req.project
-        } (Reassignment)`,
+        label: `[${requestId}] ${
+          req.displayName || req.username.split("#")[0]
+        } (${req.username.split("#")[0]}) - ${req.project} (Reassignment)`,
         description: `Item ${req.itemNumber} - ${req.status}`,
         value: `reassignment_${req._id}_${req.username}_${req.project}_${req.itemNumber}`,
       });
     }
   });
+
+  // Sort select menu options by ID
+  const options = selectMenu.options;
+  options.sort((a, b) => {
+    const idA = parseInt(a.data.label?.match(/\[(\d+)\]/)?.[1] || "0");
+    const idB = parseInt(b.data.label?.match(/\[(\d+)\]/)?.[1] || "0");
+    return idA - idB;
+  });
+  selectMenu.setOptions(options);
 
   // Create action buttons
   const completeButton = new ButtonBuilder()

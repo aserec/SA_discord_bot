@@ -15,6 +15,7 @@ interface Request {
   technologies: string[];
   username: string;
   userId: string;
+  displayName: string;
   status: string;
   timestamp: Date;
 }
@@ -299,13 +300,15 @@ module.exports = {
           });
         }
       }
-
+      console.log("interaction", interaction);
       // Create new request if no existing request found
       const request: Request = {
         project: selectedProject!,
         technologies: selectedTechnologies,
-        username: interaction.user.tag,
+        username: interaction.user.username,
         userId: interaction.user.id,
+        displayName:
+          (interaction.member as any)?.nickname || interaction.user.globalName,
         status: "Pending",
         timestamp: new Date(),
       };

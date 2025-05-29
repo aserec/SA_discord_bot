@@ -14,6 +14,7 @@ interface ReassignmentRequest {
   itemNumber: string;
   username: string;
   userId: string;
+  displayName: string;
   status: string;
   timestamp: Date;
 }
@@ -128,6 +129,9 @@ module.exports = {
             itemNumber: itemNumber,
             username: interaction.user.tag,
             userId: interaction.user.id,
+            displayName:
+              (interaction.member as any)?.nickname ||
+              interaction.user.username,
             status: "Pending",
             timestamp: new Date(),
           };
